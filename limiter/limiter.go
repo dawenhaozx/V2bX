@@ -14,6 +14,8 @@ import (
 	"github.com/xtls/xray-core/common/task"
 )
 
+var UserAliveIPsMap sync.Map // 用户UUID和其存活的IP地址映射关系的全局变量
+var OnlineInfo sync.Map      // 添加 OnlineInfo 字段
 var limitLock sync.RWMutex
 var limiter map[string]*Limiter
 
@@ -126,11 +128,27 @@ func (l *Limiter) UpdateDynamicSpeedLimit(tag, uuid string, limit int, expire ti
 	return nil
 }
 
-func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool) (Bucket *ratelimit.Bucket, Reject bool) {
-	// ip and conn limiter
-	if l.ConnLimiter.AddConnCount(taguuid, ip, isTcp) {
-		return nil, true
+func GetUserAliveIPs(user int) []string {
+	v, ok := panel.UserAliveIPsMap[user]
+	if !ok {
+		return nil
 	}
+	return v
+}
+
+func ipAllowed(ip string, aliveIPs []string) int {
+	if len(aliveIPs) == 0 {
+		return 0 // AliveIPs为空
+	}
+	for _, aliveIP := range aliveIPs {
+		if aliveIP == ip {
+			return 1 // IP在AliveIPs中
+		}
+	}
+	return 2 // IP不在AliveIPs中
+}
+
+func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool) (Bucket *ratelimit.Bucket, Reject bool) {
 	// check and gen speed limit Bucket
 	nodeLimit := l.SpeedLimit
 	userLimit := 0
@@ -153,8 +171,21 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool) (Bucket *rat
 		}
 	}
 
-	// Store online user for device limit
 	ipMap := new(sync.Map)
+	aliveIPs := GetUserAliveIPs(uid)
+	ipStatus := ipAllowed(ip, aliveIPs)
+	log.Infof("Check: ipStatus=%d, userid=%d, aliveips=%s, devicelimit=%d, speedlimit=%d\n", ipStatus, uid, ip, deviceLimit, userLimit)
+	if ipStatus == 2 && deviceLimit > 0 && deviceLimit <= len(aliveIPs) {
+		ipMap.Delete(ip)
+		l.ConnLimiter.DelConnCount(taguuid, ip)
+		return nil, true
+	}
+	// ip and conn limiter
+	if l.ConnLimiter.AddConnCount(taguuid, ip, isTcp) {
+		return nil, true
+	}
+	// Store online user for device limit
+	OnlineInfo.Store(ip, time.Now().UnixMilli())
 	ipMap.Store(ip, uid)
 	// If any device is online
 	if v, ok := l.UserOnlineIP.LoadOrStore(taguuid, ipMap); ok {
@@ -166,8 +197,9 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool) (Bucket *rat
 				counter++
 				return true
 			})
-			if counter > deviceLimit && deviceLimit > 0 {
+			if ipStatus != 1 && deviceLimit > 0 && deviceLimit < counter+len(aliveIPs) {
 				ipMap.Delete(ip)
+				l.ConnLimiter.DelConnCount(taguuid, ip)
 				return nil, true
 			}
 		}
@@ -191,15 +223,16 @@ func (l *Limiter) GetOnlineDevice() (*[]panel.OnlineUser, error) {
 	var onlineUser []panel.OnlineUser
 
 	l.UserOnlineIP.Range(func(key, value interface{}) bool {
-		email := key.(string)
 		ipMap := value.(*sync.Map)
 		ipMap.Range(func(key, value interface{}) bool {
 			uid := value.(int)
 			ip := key.(string)
-			onlineUser = append(onlineUser, panel.OnlineUser{UID: uid, IP: ip})
+			v, ok := OnlineInfo.Load(ip)
+			if ok {
+				onlineUser = append(onlineUser, panel.OnlineUser{UID: uid, IP: ip, OT: v.(int64)})
+			}
 			return true
 		})
-		l.UserOnlineIP.Delete(email) // Reset online device
 		return true
 	})
 

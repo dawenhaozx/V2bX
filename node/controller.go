@@ -26,6 +26,7 @@ type Controller struct {
 	dynamicSpeedLimitPeriodic *task.Task
 	onlineIpReportPeriodic    *task.Task
 	*conf.Options
+	initialZeroed bool
 }
 
 // NewController return a Node controller with default parameters.
