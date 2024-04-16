@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/InazumaV/V2bX/api/panel"
-	"github.com/InazumaV/V2bX/common/format"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -82,40 +81,31 @@ func (c *Controller) onlineIpReport() (err error) {
 	// Get Online info
 	c.apiClient.GetIpsList()
 
+	// Get User traffic
 	userTraffic := make(map[int]panel.UserTraffic)
-	if onlineDevice, err := c.limiter.GetOnlineDevice(); err != nil {
-		log.Print(err)
-	} else if len(*onlineDevice) > 0 || c.initialZeroed {
-		// Get User traffic
-		for i := range c.userList {
-			up, down := c.server.GetUserTraffic(c.tag, c.userList[i].Uuid, false)
-			preuserTraffic := onlineuserTraffic[(c.userList)[i].Id]
-			if (up > 0 || down > 0) && (up+down-preuserTraffic.Upload-preuserTraffic.Download > 30000) {
-				userTraffic[(c.userList)[i].Id] = panel.UserTraffic{
-					UID:      (c.userList)[i].Id,
-					Upload:   up,
-					Download: down,
-				}
-			} else {
-				// log.Printf("id:%d, up:%d, down:%d, oup:%d , odown:%d", (c.userList)[i].Id, up, down, preuserTraffic.Upload, preuserTraffic.Download)
-				c.limiter.UserOnlineIP.Delete(format.UserTag(c.tag, c.userList[i].Uuid))
-			}
-			onlineuserTraffic[(c.userList)[i].Id] = panel.UserTraffic{
+	for i := range c.userList {
+		up, down := c.server.GetUserTraffic(c.tag, c.userList[i].Uuid, false)
+		preuserTraffic := onlineuserTraffic[(c.userList)[i].Id]
+		if (up > 0 || down > 0) && (up+down-preuserTraffic.Upload-preuserTraffic.Download > 30000) {
+			userTraffic[(c.userList)[i].Id] = panel.UserTraffic{
 				UID:      (c.userList)[i].Id,
 				Upload:   up,
 				Download: down,
 			}
 		}
-		// Only report user has traffic > 100kb to allow ping test
-		var result []panel.OnlineUser
-		for _, online := range *onlineDevice {
-			if _, ok := userTraffic[online.UID]; ok {
-				result = append(result, online)
-			}
+		onlineuserTraffic[(c.userList)[i].Id] = panel.UserTraffic{
+			UID:      (c.userList)[i].Id,
+			Upload:   up,
+			Download: down,
 		}
+	}
+	if onlineDevice, err := c.limiter.GetOnlineDevice(userTraffic); err != nil {
+		log.Print(err)
+	} else if len(*onlineDevice) > 0 || c.initialZeroed {
+		// Only report user has traffic > 100kb to allow ping test
 		reportOnline := make(map[int]int)
 		data := make(map[int][]string)
-		for _, onlineuser := range result {
+		for _, onlineuser := range *onlineDevice {
 			// json structure: { UID1:["ip1","ip2"],UID2:["ip3","ip4"] }
 			data[onlineuser.UID] = append(data[onlineuser.UID], fmt.Sprintf("%s_%d", onlineuser.IP, onlineuser.OT))
 			reportOnline[onlineuser.UID]++
@@ -126,7 +116,7 @@ func (c *Controller) onlineIpReport() (err error) {
 				"err": err,
 			}).Info("Report online users failed")
 		} else {
-			log.WithField("tag", c.tag).Infof("Total %d online users, %d Reported", len(*onlineDevice), len(result))
+			log.WithField("tag", c.tag).Infof("Total %d online users, %d Reported", len(*onlineDevice), len(*onlineDevice))
 		}
 		// If onlineDevice becomes non-zero for the first time, execute the steps inside this block
 		if !c.initialZeroed && len(*onlineDevice) > 0 {

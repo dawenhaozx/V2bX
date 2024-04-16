@@ -174,7 +174,7 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool) (Bucket *rat
 	ipMap := new(sync.Map)
 	aliveIPs := GetUserAliveIPs(uid)
 	ipStatus := ipAllowed(ip, aliveIPs)
-	log.Infof("Check: ipStatus=%d, userid=%d, aliveips=%s, devicelimit=%d, speedlimit=%d\n", ipStatus, uid, ip, deviceLimit, userLimit)
+	log.Infof("Check: ipStatus=%d, userid=%d, aliveips=%s, devicelimit=%d, speedlimit=%d", ipStatus, uid, ip, deviceLimit, userLimit)
 	if ipStatus == 2 && deviceLimit > 0 && deviceLimit <= len(aliveIPs) {
 		ipMap.Delete(ip)
 		l.ConnLimiter.DelConnCount(taguuid, ip)
@@ -219,20 +219,29 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool) (Bucket *rat
 	}
 }
 
-func (l *Limiter) GetOnlineDevice() (*[]panel.OnlineUser, error) {
+func (l *Limiter) GetOnlineDevice(userTraffic map[int]panel.UserTraffic) (*[]panel.OnlineUser, error) {
 	var onlineUser []panel.OnlineUser
 
 	l.UserOnlineIP.Range(func(key, value interface{}) bool {
+		email := key.(string)
 		ipMap := value.(*sync.Map)
+		var uid, ipStatus int
+		var ok bool
 		ipMap.Range(func(key, value interface{}) bool {
 			uid := value.(int)
 			ip := key.(string)
-			v, ok := OnlineInfo.Load(ip)
-			if ok {
+			ipStatus = ipAllowed(ip, GetUserAliveIPs(uid))
+			_, ok = userTraffic[uid]
+			v, o := OnlineInfo.Load(ip)
+			if o && ok && ipStatus != 2 {
 				onlineUser = append(onlineUser, panel.OnlineUser{UID: uid, IP: ip, OT: v.(int64)})
 			}
 			return true
 		})
+		if !ok || ipStatus == 2 {
+			log.Infof("Delete email: %s, uid: %d", email, uid)
+			l.UserOnlineIP.Delete(email) // Reset online device
+		}
 		return true
 	})
 
