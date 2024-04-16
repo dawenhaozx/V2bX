@@ -86,7 +86,7 @@ func (c *Controller) onlineIpReport() (err error) {
 	for i := range c.userList {
 		up, down := c.server.GetUserTraffic(c.tag, c.userList[i].Uuid, false)
 		preuserTraffic := onlineuserTraffic[(c.userList)[i].Id]
-		if (up > 0 || down > 0) && (up+down-preuserTraffic.Upload-preuserTraffic.Download > 30000) {
+		if up+down-preuserTraffic.Upload-preuserTraffic.Download > 0 {
 			userTraffic[(c.userList)[i].Id] = panel.UserTraffic{
 				UID:      (c.userList)[i].Id,
 				Upload:   up,
