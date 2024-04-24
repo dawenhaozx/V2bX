@@ -2,8 +2,10 @@ package panel
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/goccy/go-json"
+	log "github.com/sirupsen/logrus"
 )
 
 type OnlineUser struct {
@@ -16,12 +18,26 @@ type UserInfo struct {
 	Uuid        string `json:"uuid"`
 	SpeedLimit  int    `json:"speed_limit"`
 	DeviceLimit int    `json:"device_limit"`
-	AliveIp     int    `json:"alive_ip"`
 }
-
+type IpsInfo struct {
+	Id       int      `json:"id"`
+	AliveIPs []string `json:"alive_ips"`
+}
+type IpsListBody struct {
+	//Msg  string `json:"msg"`
+	Users []IpsInfo `json:"users"`
+}
 type UserListBody struct {
 	//Msg  string `json:"msg"`
 	Users []UserInfo `json:"users"`
+}
+
+// 用户UUID和其存活的IP地址映射关系的全局变量
+var UserAliveIPsMap *sync.Map
+
+// 初始化全局变量
+func init() {
+	UserAliveIPsMap = new(sync.Map)
 }
 
 // GetUserList will pull user form sspanel
@@ -56,30 +72,45 @@ func (c *Client) GetUserList() (UserList []UserInfo, err error) {
 	}
 	c.userEtag = r.Header().Get("ETag")
 
-	var userinfos []UserInfo
-	var deviceLimit, localDeviceLimit int = 0, 0
-	for _, user := range userList.Users {
-		// If there is still device available, add the user
-		if user.DeviceLimit > 0 && user.AliveIp > 0 {
-			lastOnline := 0
-			if v, ok := c.LastReportOnline[user.Id]; ok {
-				lastOnline = v
-			}
-			// If there are any available device.
-			localDeviceLimit = user.DeviceLimit - user.AliveIp + lastOnline
-			if localDeviceLimit > 0 {
-				deviceLimit = localDeviceLimit
-			} else if lastOnline > 0 {
-				deviceLimit = lastOnline
-			} else {
-				continue
-			}
-		}
-		user.DeviceLimit = deviceLimit
-		userinfos = append(userinfos, user)
+	return userList.Users, nil
+}
+
+// GetUserList will pull user form sspanel
+func (c *Client) GetIpsList() error {
+	const path = "/api/v1/server/UniProxy/aips"
+	r, err := c.client.R().
+		SetHeader("If-None-Match", c.userEtag).
+		ForceContentType("application/json").
+		Get(path)
+	if err = c.checkResponse(r, path, err); err != nil {
+		return err
 	}
 
-	return userinfos, nil
+	if r != nil {
+		defer func() {
+			if r.RawBody() != nil {
+				r.RawBody().Close()
+			}
+		}()
+		if r.StatusCode() == 304 {
+			return nil
+		}
+	} else {
+		return fmt.Errorf("received nil response")
+	}
+	var IpsList *IpsListBody
+	if err := json.Unmarshal(r.Body(), &IpsList); err != nil {
+		return fmt.Errorf("unmarshal Ipslist error: %s", err)
+	}
+	c.userEtag = r.Header().Get("ETag")
+	UserAliveIPsMap = new(sync.Map)
+	for _, user := range IpsList.Users {
+		if len(user.AliveIPs) > 0 {
+			UserAliveIPsMap.Store(user.Id, user.AliveIPs)
+			log.Infof("GetIpsList: userid=%d, aliveips=%s, lastOnline=%d", user.Id, user.AliveIPs, c.LastReportOnline[user.Id])
+		}
+	}
+	return nil
 }
 
 type UserTraffic struct {
@@ -115,6 +146,7 @@ func (c *Client) ReportNodeOnlineUsers(data *map[int][]string, reportOnline *map
 		Post(path)
 	err = c.checkResponse(r, path, err)
 
+	log.Infof("Sending data to %s: %v", "/api/v1/server/UniProxy/alive", data)
 	if err != nil {
 		return nil
 	}

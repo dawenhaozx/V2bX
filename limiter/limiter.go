@@ -14,6 +14,15 @@ import (
 	"github.com/xtls/xray-core/common/task"
 )
 
+var nOnlineDevice *sync.Map
+var ipAllowedMap *sync.Map
+var Acount int
+
+func init() {
+	ipAllowedMap = new(sync.Map)
+	nOnlineDevice = new(sync.Map)
+}
+
 var limitLock sync.RWMutex
 var limiter map[string]*Limiter
 
@@ -126,11 +135,27 @@ func (l *Limiter) UpdateDynamicSpeedLimit(tag, uuid string, limit int, expire ti
 	return nil
 }
 
-func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool) (Bucket *ratelimit.Bucket, Reject bool) {
-	// ip and conn limiter
-	if l.ConnLimiter.AddConnCount(taguuid, ip, isTcp) {
-		return nil, true
+func GetUserAliveIPs(user int) []string {
+	v, ok := panel.UserAliveIPsMap.Load(user)
+	if !ok || v == nil {
+		return nil
 	}
+	return v.([]string)
+}
+
+func ipAllowed(ip string, aliveIPs []string) int {
+	if len(aliveIPs) == 0 {
+		return 0 // AliveIPs为空
+	}
+	for _, aliveIP := range aliveIPs {
+		if aliveIP == ip {
+			return 1 // IP在AliveIPs中
+		}
+	}
+	return 2 // IP不在AliveIPs中
+}
+
+func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool) (Bucket *ratelimit.Bucket, Reject bool) {
 	// check and gen speed limit Bucket
 	nodeLimit := l.SpeedLimit
 	userLimit := 0
@@ -153,8 +178,19 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool) (Bucket *rat
 		}
 	}
 
-	// Store online user for device limit
 	ipMap := new(sync.Map)
+	aliveIPs := GetUserAliveIPs(uid)
+	ipStatus := ipAllowed(ip, aliveIPs)
+	ipAllowedMap.Store(ip, ipStatus)
+	log.Infof("Check: ipStatus=%d, userid=%d, aliveips=%s, devicelimit=%d, speedlimit=%d", ipStatus, uid, ip, deviceLimit, userLimit)
+	if ipStatus == 2 && deviceLimit > 0 && deviceLimit <= len(aliveIPs) {
+		return nil, true
+	}
+	// ip and conn limiter
+	if l.ConnLimiter.AddConnCount(taguuid, ip, isTcp) {
+		return nil, true
+	}
+	// Store online user for device limit
 	ipMap.Store(ip, uid)
 	// If any device is online
 	if v, ok := l.UserOnlineIP.LoadOrStore(taguuid, ipMap); ok {
@@ -166,7 +202,7 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool) (Bucket *rat
 				counter++
 				return true
 			})
-			if counter > deviceLimit && deviceLimit > 0 {
+			if ipStatus != 1 && deviceLimit > 0 && deviceLimit < counter+len(aliveIPs) {
 				ipMap.Delete(ip)
 				return nil, true
 			}
@@ -187,23 +223,66 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool) (Bucket *rat
 	}
 }
 
-func (l *Limiter) GetOnlineDevice() (*[]panel.OnlineUser, error) {
+func onlineDevicesEqual(C int, D int, A *sync.Map, B *sync.Map) bool {
+	if C == 0 && D == 0 {
+		log.Infof("compare AB, [Same] prev nil & now nil")
+		return false
+	}
+	if C != D {
+		log.Infof("compare ABcount, [different] A:%d & D:%d", C, D)
+		return true
+	}
+	diff := true
+	A.Range(func(key, valueA interface{}) bool {
+		if valueB, ok := B.Load(key); ok && valueB == valueA {
+			log.Infof("compare AB, [Same] UID:%d, prev:%s now:%s", key, valueA, valueB)
+			diff = false
+			return false
+		}
+		return true
+	})
+	return diff
+}
+
+func (l *Limiter) GetOnlineDevice(userTraffic *sync.Map) (*[]panel.OnlineUser, bool, error) {
 	var onlineUser []panel.OnlineUser
+	prevonlineUser := new(sync.Map)
+	nOnlineDevice.Range(func(key, value interface{}) bool {
+		prevonlineUser.Store(key, value)
+		return true
+	})
+	nOnlineDevice = new(sync.Map)
+	Bcount := 0
 
 	l.UserOnlineIP.Range(func(key, value interface{}) bool {
 		email := key.(string)
 		ipMap := value.(*sync.Map)
+		var uid int
+		var X bool
 		ipMap.Range(func(key, value interface{}) bool {
-			uid := value.(int)
+			uid = value.(int)
 			ip := key.(string)
-			onlineUser = append(onlineUser, panel.OnlineUser{UID: uid, IP: ip})
+			a, _ := ipAllowedMap.Load(ip)
+			if _, b := userTraffic.Load(uid); b {
+				X = b
+			}
+			if a.(int) != 2 && X {
+				onlineUser = append(onlineUser, panel.OnlineUser{UID: uid, IP: ip})
+				nOnlineDevice.Store(uid, ip)
+				Bcount++
+				log.Infof("onlineUser Store,UID: %d,IP: %s", uid, ip)
+			}
 			return true
 		})
-		l.UserOnlineIP.Delete(email) // Reset online device
+		if !X {
+			log.Infof("Delete email: %s, uid: %d", email, uid)
+			l.UserOnlineIP.Delete(email) // Reset online device
+		}
 		return true
 	})
-
-	return &onlineUser, nil
+	diff := onlineDevicesEqual(Acount, Bcount, prevonlineUser, nOnlineDevice)
+	Acount = Bcount
+	return &onlineUser, diff, nil
 }
 
 type UserIpList struct {

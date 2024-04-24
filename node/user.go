@@ -1,12 +1,21 @@
 package node
 
 import (
-	"fmt"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/InazumaV/V2bX/api/panel"
 	log "github.com/sirupsen/logrus"
 )
+
+var onlineUserTraffic *sync.Map
+var nextsend time.Time
+
+func init() {
+	onlineUserTraffic = new(sync.Map)
+	nextsend = time.Now()
+}
 
 func (c *Controller) reportUserTrafficTask() (err error) {
 	// Get User traffic
@@ -15,11 +24,7 @@ func (c *Controller) reportUserTrafficTask() (err error) {
 		up, down := c.server.GetUserTraffic(c.tag, c.userList[i].Uuid, true)
 		if up > 0 || down > 0 {
 			if c.LimitConfig.EnableDynamicSpeedLimit {
-				if _, ok := c.traffic[c.userList[i].Uuid]; ok {
-					c.traffic[c.userList[i].Uuid] += up + down
-				} else {
-					c.traffic[c.userList[i].Uuid] = up + down
-				}
+				c.traffic[c.userList[i].Uuid] += up + down
 			}
 			userTraffic = append(userTraffic, panel.UserTraffic{
 				UID:      (c.userList)[i].Id,
@@ -38,45 +43,7 @@ func (c *Controller) reportUserTrafficTask() (err error) {
 			log.WithField("tag", c.tag).Infof("Report %d users traffic", len(userTraffic))
 		}
 	}
-
-	if onlineDevice, err := c.limiter.GetOnlineDevice(); err != nil {
-		log.Print(err)
-	} else if len(*onlineDevice) > 0 {
-		// Only report user has traffic > 100kb to allow ping test
-		var result []panel.OnlineUser
-		var nocountUID = make(map[int]struct{})
-		for _, traffic := range userTraffic {
-			total := traffic.Upload + traffic.Download
-			if total < int64(c.Options.DeviceOnlineMinTraffic*1000) {
-				nocountUID[traffic.UID] = struct{}{}
-			}
-		}
-		for _, online := range *onlineDevice {
-			if _, ok := nocountUID[online.UID]; !ok {
-				result = append(result, online)
-			}
-		}
-		reportOnline := make(map[int]int)
-		data := make(map[int][]string)
-		for _, onlineuser := range result {
-			// json structure: { UID1:["ip1","ip2"],UID2:["ip3","ip4"] }
-			data[onlineuser.UID] = append(data[onlineuser.UID], fmt.Sprintf("%s_%d", onlineuser.IP, c.info.Id))
-			if _, ok := reportOnline[onlineuser.UID]; ok {
-				reportOnline[onlineuser.UID]++
-			} else {
-				reportOnline[onlineuser.UID] = 1
-			}
-		}
-		if err = c.apiClient.ReportNodeOnlineUsers(&data, &reportOnline); err != nil {
-			log.WithFields(log.Fields{
-				"tag": c.tag,
-				"err": err,
-			}).Info("Report online users failed")
-		} else {
-			log.WithField("tag", c.tag).Infof("Total %d online users, %d Reported", len(*onlineDevice), len(result))
-		}
-	}
-
+	onlineUserTraffic = new(sync.Map)
 	userTraffic = nil
 	return nil
 }
@@ -102,4 +69,65 @@ func compareUserList(old, new []panel.UserInfo) (deleted, added []panel.UserInfo
 	}
 
 	return deleted, added
+}
+
+func (c *Controller) restartonlineIpReport() (err error) {
+	log.Infof("onlineIpReport time:%s", time.Now())
+	c.onlineIpReportPeriodic.Interval = c.info.PushInterval
+	time.Sleep(time.Duration(int64(c.info.PushInterval.Seconds())-time.Now().Unix()%int64(c.info.PushInterval.Seconds())) * time.Second)
+	c.onlineIpReportPeriodic.Close()
+	_ = c.onlineIpReportPeriodic.Start(false)
+	return nil
+}
+
+func (c *Controller) onlineIpReport() (err error) {
+	if time.Now().Unix()%int64(c.info.PushInterval.Seconds()) != 0 {
+		_ = c.restartonlineIpReport
+	}
+	b := int64(c.info.PushInterval.Seconds()) * 1000
+	// Get Online info
+	c.apiClient.GetIpsList()
+
+	// Get User traffic
+	ATraffic := new(sync.Map)
+	for i := range c.userList {
+		up, down := c.server.GetUserTraffic(c.tag, c.userList[i].Uuid, false)
+		nud := up + down
+		v, ok := onlineUserTraffic.Load(c.userList[i].Id)
+		if !ok || v == nil {
+			// 如果值为 nil，则设为零
+			v = int64(0)
+		}
+		pud := v.(int64)
+		npud := nud - pud
+		log.Infof("UID: %d, nud - pud: %d, prevup&down: %d ", c.userList[i].Id, npud, pud)
+		if npud > b {
+			ATraffic.Store(c.userList[i].Id, nud)
+		}
+		onlineUserTraffic.Store(c.userList[i].Id, nud)
+	}
+
+	onlineDevice, diff, err := c.limiter.GetOnlineDevice(ATraffic)
+	if err != nil {
+		log.Print(err)
+	} else if diff || (len(*onlineDevice) > 0 && time.Since(nextsend) >= 120*time.Second) {
+		// Only report user has traffic > 100kb to allow ping test
+		reportOnline := make(map[int]int)
+		data := make(map[int][]string)
+		for _, onlineuser := range *onlineDevice {
+			// json structure: { UID1:["ip1","ip2"],UID2:["ip3","ip4"] }
+			data[onlineuser.UID] = append(data[onlineuser.UID], onlineuser.IP)
+			reportOnline[onlineuser.UID]++
+		}
+		if err = c.apiClient.ReportNodeOnlineUsers(&data, &reportOnline); err != nil {
+			log.WithFields(log.Fields{
+				"tag": c.tag,
+				"err": err,
+			}).Info("Report online users failed")
+		} else {
+			nextsend = time.Now()
+			log.WithField("tag", c.tag).Infof("Total %d online users, %d Reported", len(*onlineDevice), len(*onlineDevice))
+		}
+	}
+	return nil
 }
