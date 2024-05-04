@@ -104,7 +104,7 @@ func (h *HookServer) RoutedConnection(_ context.Context, conn net.Conn, m adapte
 		conn = rate.NewConnRateLimiter(conn, b)
 	}
 	t.AddLeave(func() {
-		l.ConnLimiter.DelConnCount(m.User, ip)
+		l.ConnLimiter.DelConnCount(format.UserTag(m.Inbound, m.User), ip)
 	})
 	if h.EnableConnClear {
 		var key int
