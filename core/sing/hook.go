@@ -96,16 +96,14 @@ func (h *HookServer) RoutedConnection(_ context.Context, conn net.Conn, m adapte
 		return conn, t
 	}
 	ip := m.Source.Addr.String()
-	if b, r := l.CheckLimit(format.UserTag(m.Inbound, m.User), ip, true); r {
+	if b, r := l.CheckLimit(format.UserTag(m.Inbound, m.User), ip); r {
 		conn.Close()
 		log.Error("[", m.Inbound, "] ", "Limited ", m.User, " by ip or conn")
 		return conn, t
 	} else if b != nil {
 		conn = rate.NewConnRateLimiter(conn, b)
 	}
-	t.AddLeave(func() {
-		l.ConnLimiter.DelConnCount(format.UserTag(m.Inbound, m.User), ip)
-	})
+
 	if h.EnableConnClear {
 		var key int
 		cc := &ConnClear{
@@ -150,7 +148,7 @@ func (h *HookServer) RoutedPacketConnection(_ context.Context, conn N.PacketConn
 		return conn, t
 	}
 	ip := m.Source.Addr.String()
-	if b, r := l.CheckLimit(format.UserTag(m.Inbound, m.User), ip, true); r {
+	if b, r := l.CheckLimit(format.UserTag(m.Inbound, m.User), ip); r {
 		conn.Close()
 		log.Error("[", m.Inbound, "] ", "Limited ", m.User, " by ip or conn")
 		return conn, t

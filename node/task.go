@@ -54,14 +54,6 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 			_ = c.renewCertPeriodic.Start(true)
 		}
 	}
-	if c.LimitConfig.EnableDynamicSpeedLimit {
-		c.traffic = make(map[string]int64)
-		c.dynamicSpeedLimitPeriodic = &task.Task{
-			Interval: time.Duration(c.LimitConfig.DynamicSpeedLimitConfig.Periodic) * time.Second,
-			Execute:  c.SpeedChecker,
-		}
-		log.Printf("[%s: %d] Start dynamic speed limit", c.apiClient.NodeType, c.apiClient.NodeId)
-	}
 }
 
 func (c *Controller) nodeInfoMonitor() (err error) {
@@ -217,29 +209,14 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 			return nil
 		}
 		// clear traffic record
-		if c.LimitConfig.EnableDynamicSpeedLimit {
-			for i := range deleted {
-				delete(c.traffic, deleted[i].Uuid)
-			}
+		for i := range deleted {
+			delete(c.traffic, deleted[i].Uuid)
 		}
 	}
 	c.userList = newU
 	if len(added)+len(deleted) != 0 {
 		log.WithField("tag", c.tag).
 			Infof("%d user deleted, %d user added", len(deleted), len(added))
-	}
-	return nil
-}
-
-func (c *Controller) SpeedChecker() error {
-	for u, t := range c.traffic {
-		if t >= c.LimitConfig.DynamicSpeedLimitConfig.Traffic {
-			err := c.limiter.UpdateDynamicSpeedLimit(c.tag, u,
-				c.LimitConfig.DynamicSpeedLimitConfig.SpeedLimit,
-				time.Now().Add(time.Duration(c.LimitConfig.DynamicSpeedLimitConfig.ExpireTime)*time.Minute))
-			log.WithField("err", err).Error("Update dynamic speed limit failed")
-			delete(c.traffic, u)
-		}
 	}
 	return nil
 }

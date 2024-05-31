@@ -10,8 +10,6 @@ import (
 	"github.com/InazumaV/V2bX/common/format"
 	"github.com/InazumaV/V2bX/conf"
 	"github.com/juju/ratelimit"
-	log "github.com/sirupsen/logrus"
-	"github.com/xtls/xray-core/common/task"
 )
 
 var limitLock sync.RWMutex
@@ -19,16 +17,6 @@ var limiter map[string]*Limiter
 
 func Init() {
 	limiter = map[string]*Limiter{}
-	c := task.Periodic{
-		Interval: time.Minute * 2,
-		Execute:  ClearOnlineIP,
-	}
-	go func() {
-		log.WithField("Type", "Limiter").
-			Debug("ClearOnlineIP started")
-		time.Sleep(time.Minute * 2)
-		_ = c.Start()
-	}()
 }
 
 type Limiter struct {
@@ -38,7 +26,6 @@ type Limiter struct {
 	UserOnlineIP  *sync.Map      // Key: Name, value: {Key: Ip, value: Uid}
 	UUIDtoUID     map[string]int // Key: UUID, value: UID
 	UserLimitInfo *sync.Map      // Key: Uid value: UserLimitInfo
-	ConnLimiter   *ConnLimiter   // Key: Uid value: ConnLimiter
 	SpeedLimiter  *sync.Map      // key: Uid, value: *ratelimit.Bucket
 	OnlineDevice  *sync.Map
 	ipAllowedMap  *sync.Map
@@ -46,11 +33,10 @@ type Limiter struct {
 }
 
 type UserLimitInfo struct {
-	UID               int
-	SpeedLimit        int
-	DeviceLimit       int
-	DynamicSpeedLimit int
-	ExpireTime        int64
+	UID         int
+	SpeedLimit  int
+	DeviceLimit int
+	ExpireTime  int64
 }
 
 func AddLimiter(tag string, l *conf.LimitConfig, users []panel.UserInfo) *Limiter {
@@ -58,7 +44,6 @@ func AddLimiter(tag string, l *conf.LimitConfig, users []panel.UserInfo) *Limite
 		SpeedLimit:    l.SpeedLimit,
 		UserOnlineIP:  new(sync.Map),
 		UserLimitInfo: new(sync.Map),
-		ConnLimiter:   NewConnLimiter(l.ConnLimit, l.IPLimit, l.EnableRealtime),
 		SpeedLimiter:  new(sync.Map),
 		OnlineDevice:  new(sync.Map),
 		ipAllowedMap:  new(sync.Map),
@@ -121,17 +106,6 @@ func (l *Limiter) UpdateUser(tag string, added []panel.UserInfo, deleted []panel
 	}
 }
 
-func (l *Limiter) UpdateDynamicSpeedLimit(tag, uuid string, limit int, expire time.Time) error {
-	if v, ok := l.UserLimitInfo.Load(format.UserTag(tag, uuid)); ok {
-		info := v.(*UserLimitInfo)
-		info.DynamicSpeedLimit = limit
-		info.ExpireTime = expire.Unix()
-	} else {
-		return errors.New("not found")
-	}
-	return nil
-}
-
 func GetUserAliveIPs(user int) []string {
 	v, ok := panel.UserAliveIPsMap.Load(user)
 	if !ok || v == nil {
@@ -152,9 +126,8 @@ func ipAllowed(ip string, aliveIPs []string) int {
 	return 2 // IP不在AliveIPs中
 }
 
-func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool) (Bucket *ratelimit.Bucket, Reject bool) {
+func (l *Limiter) CheckLimit(taguuid string, ip string) (Bucket *ratelimit.Bucket, Reject bool) {
 	// check and gen speed limit Bucket
-	nodeLimit := l.SpeedLimit
 	userLimit := 0
 	deviceLimit := 0
 	var uid int
@@ -165,13 +138,10 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool) (Bucket *rat
 		if u.ExpireTime < time.Now().Unix() && u.ExpireTime != 0 {
 			if u.SpeedLimit != 0 {
 				userLimit = u.SpeedLimit
-				u.DynamicSpeedLimit = 0
 				u.ExpireTime = 0
 			} else {
 				l.UserLimitInfo.Delete(taguuid)
 			}
-		} else {
-			userLimit = determineSpeedLimit(u.SpeedLimit, u.DynamicSpeedLimit)
 		}
 	}
 	ipMap := new(sync.Map)
@@ -182,10 +152,7 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool) (Bucket *rat
 	if ipStatus == 2 && deviceLimit > 0 && deviceLimit <= len(aliveIPs) {
 		return nil, true
 	}
-	// ip and conn limiter
-	if l.ConnLimiter.AddConnCount(taguuid, ip, isTcp) {
-		return nil, true
-	}
+
 	// Store online user for device limit
 	ipMap.Store(ip, uid)
 	// If any device is online
@@ -205,7 +172,7 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool) (Bucket *rat
 		}
 	}
 
-	limit := int64(determineSpeedLimit(nodeLimit, userLimit)) * 1000000 / 8 // If you need the Speed limit
+	limit := int64(userLimit) * 1000000 / 8 // If you need the Speed limit
 	if limit > 0 {
 		Bucket = ratelimit.NewBucketWithQuantum(time.Second, limit, limit) // Byte/s
 		if v, ok := l.SpeedLimiter.LoadOrStore(taguuid, Bucket); ok {
@@ -277,26 +244,6 @@ func (l *Limiter) GetOnlineDevice(tag string, userTraffic map[int]int64, T int64
 type UserIpList struct {
 	Uid    int      `json:"Uid"`
 	IpList []string `json:"Ips"`
-}
-
-func determineDeviceLimit(nodeLimit, userLimit int) (limit int) {
-	if nodeLimit == 0 || userLimit == 0 {
-		if nodeLimit > userLimit {
-			return nodeLimit
-		} else if nodeLimit < userLimit {
-			return userLimit
-		} else {
-			return 0
-		}
-	} else {
-		if nodeLimit > userLimit {
-			return userLimit
-		} else if nodeLimit < userLimit {
-			return nodeLimit
-		} else {
-			return nodeLimit
-		}
-	}
 }
 
 func (l *Limiter) ResetOtraffic(tag string) error {
