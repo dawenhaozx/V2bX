@@ -135,13 +135,11 @@ func (l *Limiter) CheckLimit(taguuid string, ip string) (Bucket *ratelimit.Bucke
 		u := v.(*UserLimitInfo)
 		deviceLimit = u.DeviceLimit
 		uid = u.UID
-		if u.ExpireTime < time.Now().Unix() && u.ExpireTime != 0 {
-			if u.SpeedLimit != 0 {
-				userLimit = u.SpeedLimit
-				u.ExpireTime = 0
-			} else {
-				l.UserLimitInfo.Delete(taguuid)
-			}
+		if u.SpeedLimit != 0 {
+			userLimit = u.SpeedLimit
+			u.ExpireTime = 0
+		} else {
+			l.UserLimitInfo.Delete(taguuid)
 		}
 	}
 	ipMap := new(sync.Map)
