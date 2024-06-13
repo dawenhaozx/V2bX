@@ -40,6 +40,9 @@ type Limiter struct {
 	UserLimitInfo *sync.Map      // Key: Uid value: UserLimitInfo
 	ConnLimiter   *ConnLimiter   // Key: Uid value: ConnLimiter
 	SpeedLimiter  *sync.Map      // key: Uid, value: *ratelimit.Bucket
+	OnlineDevice  *sync.Map
+	ipAllowedMap  *sync.Map
+	Otraffic      *sync.Map
 }
 
 type UserLimitInfo struct {
@@ -58,6 +61,9 @@ func AddLimiter(tag string, l *conf.LimitConfig, users []panel.UserInfo) *Limite
 		UserLimitInfo: new(sync.Map),
 		ConnLimiter:   NewConnLimiter(l.ConnLimit, l.IPLimit, l.EnableRealtime),
 		SpeedLimiter:  new(sync.Map),
+		OnlineDevice:  new(sync.Map),
+		ipAllowedMap:  new(sync.Map),
+		Otraffic:      new(sync.Map),
 	}
 	uuidmap := make(map[string]int)
 	for i := range users {
@@ -129,11 +135,27 @@ func (l *Limiter) UpdateDynamicSpeedLimit(tag, uuid string, limit int, expire ti
 	return nil
 }
 
-func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool) (Bucket *ratelimit.Bucket, Reject bool) {
-	// ip and conn limiter
-	if l.ConnLimiter.AddConnCount(taguuid, ip, isTcp) {
-		return nil, true
+func GetUserAliveIPs(user int) []string {
+	v, ok := panel.UserAliveIPsMap.Load(user)
+	if !ok || v == nil {
+		return nil
 	}
+	return v.([]string)
+}
+
+func ipAllowed(ip string, aliveIPs []string) int {
+	if len(aliveIPs) == 0 {
+		return 0 // AliveIPs为空
+	}
+	for _, aliveIP := range aliveIPs {
+		if aliveIP == ip {
+			return 1 // IP在AliveIPs中
+		}
+	}
+	return 2 // IP不在AliveIPs中
+}
+
+func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool) (Bucket *ratelimit.Bucket, Reject bool) {
 	// check and gen speed limit Bucket
 	nodeLimit := l.SpeedLimit
 	userLimit := 0
@@ -155,9 +177,19 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool) (Bucket *rat
 			userLimit = determineSpeedLimit(u.SpeedLimit, u.DynamicSpeedLimit)
 		}
 	}
-
-	// Store online user for device limit
 	ipMap := new(sync.Map)
+	aliveIPs := GetUserAliveIPs(uid)
+	ipStatus := ipAllowed(ip, aliveIPs)
+	l.ipAllowedMap.Store(ip, ipStatus)
+	// log.Infof("Check: ipStatus=%d, userid=%d, aliveips=%s, devicelimit=%d, speedlimit=%d", ipStatus, uid, ip, deviceLimit, userLimit)
+	if ipStatus == 2 && deviceLimit > 0 && deviceLimit <= len(aliveIPs) {
+		return nil, true
+	}
+	// ip and conn limiter
+	if l.ConnLimiter.AddConnCount(taguuid, ip, isTcp) {
+		return nil, true
+	}
+	// Store online user for device limit
 	ipMap.Store(ip, uid)
 	// If any device is online
 	if v, ok := l.UserOnlineIP.LoadOrStore(taguuid, ipMap); ok {
@@ -169,7 +201,7 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool) (Bucket *rat
 				counter++
 				return true
 			})
-			if counter > deviceLimit && deviceLimit > 0 {
+			if ipStatus != 1 && deviceLimit > 0 && deviceLimit < counter+len(aliveIPs) {
 				ipMap.Delete(ip)
 				return nil, true
 			}
@@ -190,23 +222,59 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool) (Bucket *rat
 	}
 }
 
-func (l *Limiter) GetOnlineDevice() (*[]panel.OnlineUser, error) {
+func (l *Limiter) GetOnlineDevice(tag string, userTraffic map[int]int64, T int64) (*[]panel.OnlineUser, bool, error) {
 	var onlineUser []panel.OnlineUser
 
+	PrevT := make(map[int]int64)
+	PrevO := make(map[int]string)
+	l.Otraffic.Range(func(key, value interface{}) bool {
+		PrevT[key.(int)] = value.(int64)
+		return true
+	})
+	l.OnlineDevice.Range(func(key, value interface{}) bool {
+		PrevO[key.(int)] = value.(string)
+		return true
+	})
+	l.OnlineDevice = new(sync.Map)
+	l.Otraffic = new(sync.Map)
+	diff := false
 	l.UserOnlineIP.Range(func(key, value interface{}) bool {
 		email := key.(string)
 		ipMap := value.(*sync.Map)
+		var uid int
+		var X int64
+		var A int
+		var pip string
 		ipMap.Range(func(key, value interface{}) bool {
-			uid := value.(int)
+			uid = value.(int)
 			ip := key.(string)
-			onlineUser = append(onlineUser, panel.OnlineUser{UID: uid, IP: ip})
+			if a, aok := l.ipAllowedMap.Load(ip); aok {
+				A = a.(int)
+			}
+			l.Otraffic.Store(uid, userTraffic[uid])
+			X = userTraffic[uid] - PrevT[uid]
+			pip = PrevO[uid]
+			if A != 2 {
+				if X <= T {
+					ip = ""
+				}
+				if pip != ip {
+					diff = true
+				}
+				onlineUser = append(onlineUser, panel.OnlineUser{UID: uid, IP: ip})
+				l.OnlineDevice.Store(uid, ip)
+				// log.Infof("onlineUser Store,UID: %d,IP: %s", uid, ip)
+			}
 			return true
 		})
-		l.UserOnlineIP.Delete(email) // Reset online device
+		if A == 2 || X <= T {
+			// log.Infof("Delete email: %s, uid: %d", email, uid)
+			l.UserOnlineIP.Delete(email) // Reset online device
+		}
 		return true
 	})
 
-	return &onlineUser, nil
+	return &onlineUser, diff, nil
 }
 
 type UserIpList struct {
@@ -232,4 +300,11 @@ func determineDeviceLimit(nodeLimit, userLimit int) (limit int) {
 			return nodeLimit
 		}
 	}
+}
+
+func (l *Limiter) ResetOtraffic(tag string) error {
+	limitLock.Lock()
+	limiter[tag].Otraffic = new(sync.Map)
+	limitLock.Unlock()
+	return nil
 }
