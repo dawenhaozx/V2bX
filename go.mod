@@ -251,4 +251,4 @@ require (
 )
 
 //github.com/apernet/hysteria/core v1.3.5-0.20240201034858-bb99579bb92c => /root/hysteria/core
-replace github.com/sagernet/sing-box v1.9.0 => github.com/wyx2685/sing-box_mod v0.0.8
+replace github.com/sagernet/sing-box v1.9.0 => github.com/dawenhaozx/sing-box v1.8.12-0.20240614094356-fc5de7d467bb
