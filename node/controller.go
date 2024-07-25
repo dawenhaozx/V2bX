@@ -3,6 +3,7 @@ package node
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/InazumaV/V2bX/api/panel"
 	"github.com/InazumaV/V2bX/common/task"
@@ -25,7 +26,9 @@ type Controller struct {
 	renewCertPeriodic         *task.Task
 	dynamicSpeedLimitPeriodic *task.Task
 	onlineIpReportPeriodic    *task.Task
+	getonlineIpReportPeriodic *task.Task
 	*conf.Options
+	nextsend time.Time
 }
 
 // NewController return a Node controller with default parameters.
@@ -34,6 +37,7 @@ func NewController(server vCore.Core, api *panel.Client, config *conf.Options) *
 		server:    server,
 		Options:   config,
 		apiClient: api,
+		nextsend:  time.Now(),
 	}
 	return controller
 }
@@ -109,6 +113,9 @@ func (c *Controller) Close() error {
 	}
 	if c.onlineIpReportPeriodic != nil {
 		c.onlineIpReportPeriodic.Close()
+	}
+	if c.getonlineIpReportPeriodic != nil {
+		c.getonlineIpReportPeriodic.Close()
 	}
 	err := c.server.DelNode(c.tag)
 	if err != nil {
