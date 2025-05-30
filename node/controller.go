@@ -3,6 +3,7 @@ package node
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/InazumaV/V2bX/api/panel"
 	"github.com/InazumaV/V2bX/common/task"
@@ -19,14 +20,15 @@ type Controller struct {
 	limiter                   *limiter.Limiter
 	traffic                   map[string]int64
 	userList                  []panel.UserInfo
-	aliveMap                  map[int]int
 	info                      *panel.NodeInfo
 	nodeInfoMonitorPeriodic   *task.Task
 	userReportPeriodic        *task.Task
 	renewCertPeriodic         *task.Task
 	dynamicSpeedLimitPeriodic *task.Task
 	onlineIpReportPeriodic    *task.Task
+	getonlineIpReportPeriodic *task.Task
 	*conf.Options
+	nextsend time.Time
 }
 
 // NewController return a Node controller with default parameters.
@@ -35,6 +37,7 @@ func NewController(server vCore.Core, api *panel.Client, config *conf.Options) *
 		server:    server,
 		Options:   config,
 		apiClient: api,
+		nextsend:  time.Now(),
 	}
 	return controller
 }
@@ -55,10 +58,6 @@ func (c *Controller) Start() error {
 	if len(c.userList) == 0 {
 		return errors.New("add users error: not have any user")
 	}
-	c.aliveMap, err = c.apiClient.GetUserAlive()
-	if err != nil {
-		return fmt.Errorf("failed to get user alive list: %s", err)
-	}
 	if len(c.Options.Name) == 0 {
 		c.tag = c.buildNodeTag(node)
 	} else {
@@ -66,7 +65,7 @@ func (c *Controller) Start() error {
 	}
 
 	// add limiter
-	l := limiter.AddLimiter(c.tag, &c.LimitConfig, c.userList, c.aliveMap)
+	l := limiter.AddLimiter(c.tag, &c.LimitConfig, c.userList)
 	// add rule limiter
 	if err = l.UpdateRule(&node.Rules); err != nil {
 		return fmt.Errorf("update rule error: %s", err)
@@ -114,6 +113,9 @@ func (c *Controller) Close() error {
 	}
 	if c.onlineIpReportPeriodic != nil {
 		c.onlineIpReportPeriodic.Close()
+	}
+	if c.getonlineIpReportPeriodic != nil {
+		c.getonlineIpReportPeriodic.Close()
 	}
 	err := c.server.DelNode(c.tag)
 	if err != nil {

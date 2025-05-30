@@ -18,14 +18,29 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 	}
 	// fetch user list task
 	c.userReportPeriodic = &task.Task{
-		Interval: node.PushInterval,
+		Interval: node.PushInterval*4 + 1*time.Second,
 		Execute:  c.reportUserTrafficTask,
 	}
+	// fetch onlineIp list task
+	c.onlineIpReportPeriodic = &task.Task{
+		Interval: node.PushInterval,
+		Execute:  c.onlineIpReport,
+	}
+	// fetch getonlineIp list task
+	c.getonlineIpReportPeriodic = &task.Task{
+		Interval: node.PushInterval + 5*time.Second,
+		Execute:  c.getonlineIpReport,
+	}
+	time.Sleep(time.Duration(int64(node.PushInterval.Seconds())-time.Now().Unix()%int64(node.PushInterval.Seconds())) * time.Second)
 	log.WithField("tag", c.tag).Info("Start monitor node status")
 	// delay to start nodeInfoMonitor
 	_ = c.nodeInfoMonitorPeriodic.Start(false)
 	log.WithField("tag", c.tag).Info("Start report node status")
 	_ = c.userReportPeriodic.Start(false)
+	log.WithField("tag", c.tag).Info("Start report online status")
+	_ = c.onlineIpReportPeriodic.Start(false)
+	log.WithField("tag", c.tag).Info("Start report getonline status")
+	_ = c.getonlineIpReportPeriodic.Start(false)
 	if node.Security == panel.Tls {
 		switch c.CertConfig.CertMode {
 		case "none", "", "file", "self":
@@ -68,15 +83,6 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		}).Error("Get user list failed")
 		return nil
 	}
-	// get user alive
-	newA, err := c.apiClient.GetUserAlive()
-	if err != nil {
-		log.WithFields(log.Fields{
-			"tag": c.tag,
-			"err": err,
-		}).Error("Get alive list failed")
-		return nil
-	}
 	if newN != nil {
 		c.info = newN
 		// nodeInfo changed
@@ -101,13 +107,10 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 			// Remove Old limiter
 			limiter.DeleteLimiter(c.tag)
 			// Add new Limiter
-			l := limiter.AddLimiter(c.tag, &c.LimitConfig, c.userList, newA)
+			l := limiter.AddLimiter(c.tag, &c.LimitConfig, c.userList)
 			c.limiter = l
 		}
-		// update alive list
-		if newA != nil {
-			c.limiter.AliveList = newA
-		}
+
 		// Update rule
 		err = c.limiter.UpdateRule(&newN.Rules)
 		if err != nil {
@@ -151,26 +154,28 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 			return nil
 		}
 		// Check interval
-		if c.nodeInfoMonitorPeriodic.Interval != newN.PullInterval &&
-			newN.PullInterval != 0 {
+		if (c.nodeInfoMonitorPeriodic.Interval != newN.PullInterval && newN.PullInterval != 0) || (c.onlineIpReportPeriodic.Interval != newN.PushInterval &&
+			newN.PushInterval != 0) {
+			log.Printf("newN time:%s", time.Now())
+			time.Sleep(time.Duration(int64(newN.PushInterval.Seconds())-time.Now().Unix()%int64(newN.PushInterval.Seconds())) * time.Second)
+			c.onlineIpReportPeriodic.Interval = newN.PushInterval
+			c.onlineIpReportPeriodic.Close()
+			_ = c.onlineIpReportPeriodic.Start(false)
+			c.getonlineIpReportPeriodic.Interval = newN.PushInterval + 5*time.Second
+			c.getonlineIpReportPeriodic.Close()
+			_ = c.getonlineIpReportPeriodic.Start(false)
+			c.userReportPeriodic.Interval = newN.PushInterval*4 + 1*time.Second
+			c.userReportPeriodic.Close()
+			_ = c.userReportPeriodic.Start(false)
 			c.nodeInfoMonitorPeriodic.Interval = newN.PullInterval
 			c.nodeInfoMonitorPeriodic.Close()
 			_ = c.nodeInfoMonitorPeriodic.Start(false)
-		}
-		if c.userReportPeriodic.Interval != newN.PushInterval &&
-			newN.PushInterval != 0 {
-			c.userReportPeriodic.Interval = newN.PullInterval
-			c.userReportPeriodic.Close()
-			_ = c.userReportPeriodic.Start(false)
 		}
 		log.WithField("tag", c.tag).Infof("Added %d new users", len(c.userList))
 		// exit
 		return nil
 	}
-	// update alive list
-	if newA != nil {
-		c.limiter.AliveList = newA
-	}
+
 	// node no changed, check users
 	if len(newU) == 0 {
 		return nil
