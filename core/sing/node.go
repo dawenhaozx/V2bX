@@ -55,9 +55,10 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 		return option.Inbound{}, fmt.Errorf("the listen ip not vail")
 	}
 	listen := option.ListenOptions{
-		Listen:      (*badoption.Addr)(&addr),
-		ListenPort:  uint16(info.Common.ServerPort),
-		TCPFastOpen: c.SingOptions.TCPFastOpen,
+		Listen:       (*badoption.Addr)(&addr),
+		ListenPort:   uint16(info.Common.ServerPort),
+		TCPFastOpen:  c.SingOptions.TCPFastOpen,
+		TCPMultiPath: c.SingOptions.TCPMultiPath,
 	}
 	var multiplex *option.InboundMultiplexOptions
 	if c.SingOptions.Multiplex != nil {

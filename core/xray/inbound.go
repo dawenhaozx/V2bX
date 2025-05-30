@@ -84,6 +84,7 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 		socketConfig := &coreConf.SocketConfig{
 			AcceptProxyProtocol: option.XrayOptions.EnableProxyProtocol,
 			TFO:                 option.XrayOptions.EnableTFO,
+			TcpMptcp:            option.XrayOptions.EnableMPTCP,
 		} //Enable proxy protocol
 		in.StreamSetting.SocketSettings = socketConfig
 	}
