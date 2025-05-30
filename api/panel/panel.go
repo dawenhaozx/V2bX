@@ -25,9 +25,9 @@ type Client struct {
 	NodeId           int
 	nodeEtag         string
 	userEtag         string
+	ipsEtag          string
 	responseBodyHash string
-	UserList         *UserListBody
-	AliveMap         *AliveMap
+	LastReportOnline map[int]int
 }
 
 func New(c *conf.ApiConfig) (*Client, error) {
@@ -36,7 +36,7 @@ func New(c *conf.ApiConfig) (*Client, error) {
 		client = resty.NewWithLocalAddr(&net.TCPAddr{
 			IP: net.ParseIP(c.APISendIP),
 		})
-	} else {	
+	} else {
 		client = resty.New()
 	}
 	client.SetRetryCount(3)
@@ -84,7 +84,5 @@ func New(c *conf.ApiConfig) (*Client, error) {
 		APISendIP: c.APISendIP,
 		NodeType:  c.NodeType,
 		NodeId:    c.NodeID,
-		UserList:  &UserListBody{},
-		AliveMap:  &AliveMap{},
 	}, nil
 }

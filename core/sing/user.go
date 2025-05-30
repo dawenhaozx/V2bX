@@ -146,7 +146,8 @@ func (b *Sing) GetUserTrafficSlice(tag string, reset bool) ([]panel.UserTraffic,
 			traffic := value.(*counter.TrafficStorage)
 			up := traffic.UpCounter.Load()
 			down := traffic.DownCounter.Load()
-			if up+down > b.nodeReportMinTrafficBytes[tag] {
+			// Online detection needs all counters; only traffic reports apply the threshold.
+			if !reset || up+down > b.nodeReportMinTrafficBytes[tag] {
 				if reset {
 					traffic.UpCounter.Store(0)
 					traffic.DownCounter.Store(0)

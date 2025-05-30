@@ -75,7 +75,8 @@ func (h *Hysteria2) GetUserTrafficSlice(tag string, reset bool) ([]panel.UserTra
 			traffic := value.(*counter.TrafficStorage)
 			up := traffic.UpCounter.Load()
 			down := traffic.DownCounter.Load()
-			if up+down > hook.ReportMinTrafficBytes {
+			// Online detection needs all counters; only traffic reports apply the threshold.
+			if !reset || up+down > hook.ReportMinTrafficBytes {
 				if reset {
 					traffic.UpCounter.Store(0)
 					traffic.DownCounter.Store(0)

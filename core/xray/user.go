@@ -68,7 +68,8 @@ func (x *Xray) GetUserTrafficSlice(tag string, reset bool) ([]panel.UserTraffic,
 			traffic := value.(*counter.TrafficStorage)
 			up := traffic.UpCounter.Load()
 			down := traffic.DownCounter.Load()
-			if up+down > x.nodeReportMinTrafficBytes[tag] {
+			// Online detection needs all counters; only traffic reports apply the threshold.
+			if !reset || up+down > x.nodeReportMinTrafficBytes[tag] {
 				if reset {
 					traffic.UpCounter.Store(0)
 					traffic.DownCounter.Store(0)
