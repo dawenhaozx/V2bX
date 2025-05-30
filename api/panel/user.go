@@ -2,8 +2,10 @@ package panel
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/goccy/go-json"
+	log "github.com/sirupsen/logrus"
 )
 
 type OnlineUser struct {
@@ -17,18 +19,29 @@ type UserInfo struct {
 	SpeedLimit  int    `json:"speed_limit"`
 	DeviceLimit int    `json:"device_limit"`
 }
-
+type IpsInfo struct {
+	Id       int      `json:"id"`
+	AliveIPs []string `json:"alive_ips"`
+}
+type IpsListBody struct {
+	//Msg  string `json:"msg"`
+	Users []IpsInfo `json:"users"`
+}
 type UserListBody struct {
 	//Msg  string `json:"msg"`
 	Users []UserInfo `json:"users"`
 }
 
-type AliveMap struct {
-	Alive map[int]int `json:"alive"`
+// 用户UUID和其存活的IP地址映射关系的全局变量
+var UserAliveIPsMap *sync.Map
+
+// 初始化全局变量
+func init() {
+	UserAliveIPsMap = new(sync.Map)
 }
 
 // GetUserList will pull user from v2board
-func (c *Client) GetUserList() ([]UserInfo, error) {
+func (c *Client) GetUserList() (UserList []UserInfo, err error) {
 	const path = "/api/v1/server/UniProxy/user"
 	r, err := c.client.R().
 		SetHeader("If-None-Match", c.userEtag).
@@ -55,28 +68,41 @@ func (c *Client) GetUserList() ([]UserInfo, error) {
 }
 
 // GetUserAlive will fetch the alive_ip count for users
-func (c *Client) GetUserAlive() (map[int]int, error) {
-	c.AliveMap = &AliveMap{}
-	const path = "/api/v1/server/UniProxy/alivelist"
+func (c *Client) GetIpsList() error {
+	const path = "/api/v1/server/UniProxy/aips"
 	r, err := c.client.R().
+		SetHeader("If-None-Match", c.userEtag).
 		ForceContentType("application/json").
 		Get(path)
-	if err != nil || r.StatusCode() >= 399 {
-		c.AliveMap.Alive = make(map[int]int)
-		return c.AliveMap.Alive, nil
-	}
-	if r == nil || r.RawResponse == nil {
-		fmt.Printf("received nil response or raw response")
-		c.AliveMap.Alive = make(map[int]int)
-		return c.AliveMap.Alive, nil
-	}
-	defer r.RawResponse.Body.Close()
-	if err := json.Unmarshal(r.Body(), c.AliveMap); err != nil {
-		fmt.Printf("unmarshal user alive list error: %s", err)
-		c.AliveMap.Alive = make(map[int]int)
+	if err = c.checkResponse(r, path, err); err != nil {
+		return err
 	}
 
-	return c.AliveMap.Alive, nil
+	if r != nil {
+		defer func() {
+			if r.RawBody() != nil {
+				r.RawBody().Close()
+			}
+		}()
+		if r.StatusCode() == 304 {
+			return nil
+		}
+	} else {
+		return fmt.Errorf("received nil response")
+	}
+	var IpsList *IpsListBody
+	if err := json.Unmarshal(r.Body(), &IpsList); err != nil {
+		return fmt.Errorf("unmarshal Ipslist error: %s", err)
+	}
+	c.userEtag = r.Header().Get("ETag")
+	UserAliveIPsMap = new(sync.Map)
+	for _, user := range IpsList.Users {
+		if len(user.AliveIPs) > 0 {
+			UserAliveIPsMap.Store(user.Id, user.AliveIPs)
+			log.Infof("GetIpsList: userid=%d, aliveips=%s, lastOnline=%d", user.Id, user.AliveIPs, c.LastReportOnline[user.Id])
+		}
+	}
+	return nil
 }
 
 type UserTraffic struct {
@@ -103,7 +129,7 @@ func (c *Client) ReportUserTraffic(userTraffic []UserTraffic) error {
 	return nil
 }
 
-func (c *Client) ReportNodeOnlineUsers(data *map[int][]string) error {
+func (c *Client) ReportNodeOnlineUsers(data *map[int][]string, reportOnline *map[int]int) error {
 	const path = "/api/v1/server/UniProxy/alive"
 	r, err := c.client.R().
 		SetBody(data).
@@ -111,6 +137,7 @@ func (c *Client) ReportNodeOnlineUsers(data *map[int][]string) error {
 		Post(path)
 	err = c.checkResponse(r, path, err)
 
+	log.Infof("Sending data to %s: %v", "/api/v1/server/UniProxy/alive", data)
 	if err != nil {
 		return nil
 	}
