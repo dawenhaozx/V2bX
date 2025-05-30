@@ -22,7 +22,7 @@ func buildOutbound(config *conf2.Options, tag string) (*core.OutboundHandlerConf
 	}
 
 	// Freedom Protocol setting
-	var domainStrategy = "Asis"
+	var domainStrategy = "AsIs"
 	if config.XrayOptions.EnableDNS {
 		if config.XrayOptions.DNSType != "" {
 			domainStrategy = config.XrayOptions.DNSType

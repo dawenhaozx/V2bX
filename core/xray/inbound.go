@@ -89,6 +89,12 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 		} //Enable proxy protocol
 		in.StreamSetting.SocketSettings = socketConfig
 	}
+	if option.XrayOptions.EnableMPTCP {
+		if in.StreamSetting.SocketSettings == nil {
+			in.StreamSetting.SocketSettings = &coreConf.SocketConfig{}
+		}
+		in.StreamSetting.SocketSettings.TcpMptcp = true
+	}
 	// Set TLS or Reality settings
 	switch nodeInfo.Security {
 	case panel.Tls:

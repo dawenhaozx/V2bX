@@ -64,6 +64,8 @@ GOEXPERIMENT=jsonv2 go build -v -o build_assets/V2bX -tags "sing xray hysteria2 
 
 [详细使用教程](https://v2bx.v-50.me/)
 
+MPTCP 默认关闭。在 `Nodes` 中，sing 节点设置 `"TCPMultiPath": true`，xray 节点设置 `"EnableMPTCP": true`；xray 的 `EnableTFO` 同时支持布尔值和数值。
+
 ## 免责声明
 
 * 此项目用于本人自用，因此本人不能保证向后兼容性。

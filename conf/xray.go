@@ -51,7 +51,8 @@ type XrayOptions struct {
 	EnableDNS           bool                    `json:"EnableDNS"`
 	DNSType             string                  `json:"DNSType"`
 	EnableUot           bool                    `json:"EnableUot"`
-	EnableTFO           bool                    `json:"EnableTFO"`
+	EnableTFO           interface{}             `json:"EnableTFO"`
+	EnableMPTCP         bool                    `json:"EnableMPTCP"`
 	DisableIVCheck      bool                    `json:"DisableIVCheck"`
 	DisableSniffing     bool                    `json:"DisableSniffing"`
 	EnableFallback      bool                    `json:"EnableFallback"`
@@ -73,6 +74,7 @@ func NewXrayOptions() *XrayOptions {
 		DNSType:             "AsIs",
 		EnableUot:           false,
 		EnableTFO:           false,
+		EnableMPTCP:         false,
 		DisableIVCheck:      false,
 		DisableSniffing:     false,
 		EnableFallback:      false,

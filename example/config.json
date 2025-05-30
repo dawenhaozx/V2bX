@@ -31,6 +31,7 @@
       "DeviceOnlineMinTraffic": 200,
       "MinReportTraffic": 0,
       "TCPFastOpen": false,
+      "TCPMultiPath": true,
       "SniffEnabled": true,
       "CertConfig": {
         "CertMode": "self",
