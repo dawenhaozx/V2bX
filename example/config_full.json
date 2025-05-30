@@ -114,6 +114,8 @@
       // 开启 TCP Fast Open
       "EnableTFO": true,
 
+      "TCPMultiPath": true,
+
       // 开启 DNS
       "EnableDNS" : true,
       // 设置 Domain Strategy 需要开启 DNS ，默认 AsIS
@@ -197,6 +199,7 @@
       "SendIP": "0.0.0.0",
       "EnableProxyProtocol": true,
       "EnableTFO": true,
+      "EnableMPTCP": true,
       // 以上同 sing
 
       // 开启自定义DNS

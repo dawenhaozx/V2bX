@@ -33,6 +33,7 @@ func NewSingConfig() *SingConfig {
 
 type SingOptions struct {
 	TCPFastOpen              bool                   `json:"EnableTFO"`
+	TCPMultiPath             bool                   `json:"TCPMultiPath"`
 	SniffEnabled             bool                   `json:"EnableSniff"`
 	SniffOverrideDestination bool                   `json:"SniffOverrideDestination"`
 	EnableDNS                bool                   `json:"EnableDNS"`
@@ -74,6 +75,7 @@ func NewSingOptions() *SingOptions {
 	return &SingOptions{
 		EnableDNS:                false,
 		TCPFastOpen:              false,
+		TCPMultiPath:             false,
 		SniffEnabled:             true,
 		SniffOverrideDestination: true,
 		FallBackConfigs:          &FallBackConfigForSing{},

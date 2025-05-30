@@ -50,7 +50,10 @@ func updateDNSConfig(node *panel.NodeInfo) (err error) {
 			log.WithField("err", err).Error("Error marshaling dnsConfig to JSON")
 			return err
 		}
-		err = saveDnsConfig(dnsConfigJSON, dnsPath)
+		if err := saveDnsConfig(dnsConfigJSON, dnsPath); err != nil {
+			// 可选择打印日志、忽略、或者注释说明：
+			log.Printf("Failed to save DNS config: %v", err)
+		}
 	}
 	return err
 }

@@ -9,5 +9,6 @@
   "SendIP": "0.0.0.0",
   "EnableProxyProtocol": false,
   "EnableTFO": true,
+  "EnableMPTCP": true,
   "DNSType": "ipv4_only"
 }

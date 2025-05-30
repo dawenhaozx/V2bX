@@ -71,7 +71,7 @@ func (c *Xray) GetUserTraffic(tag, uuid string, reset bool) (up int64, down int6
 }
 
 func (c *Xray) AddUsers(p *vCore.AddUsersParams) (added int, err error) {
-	users := make([]*protocol.User, 0, len(p.Users))
+	var users []*protocol.User
 	switch p.NodeInfo.Type {
 	case "vmess":
 		users = buildVmessUsers(p.Tag, p.Users)

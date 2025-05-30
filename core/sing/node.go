@@ -59,9 +59,10 @@ func getInboundOptions(tag string, info *panel.NodeInfo, c *conf.Options) (optio
 		domainStrategy = c.SingOptions.DomainStrategy
 	}
 	listen := option.ListenOptions{
-		Listen:      (*badoption.Addr)(&addr),
-		ListenPort:  uint16(info.Common.ServerPort),
-		TCPFastOpen: c.SingOptions.TCPFastOpen,
+		Listen:       (*badoption.Addr)(&addr),
+		ListenPort:   uint16(info.Common.ServerPort),
+		TCPFastOpen:  c.SingOptions.TCPFastOpen,
+		TCPMultiPath: c.SingOptions.TCPMultiPath,
 		InboundOptions: option.InboundOptions{
 			SniffEnabled:             c.SingOptions.SniffEnabled,
 			SniffOverrideDestination: c.SingOptions.SniffOverrideDestination,
