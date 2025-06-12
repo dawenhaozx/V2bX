@@ -231,15 +231,14 @@ require (
 	github.com/sagernet/nftables v0.3.0-beta.4 // indirect
 	github.com/sagernet/quic-go v0.52.0-beta.1 // indirect
 	github.com/sagernet/sing-mux v0.3.2 // indirect
-	github.com/sagernet/sing-quic v0.5.0-beta.1 // indirect
-	github.com/sagernet/sing-shadowsocks v0.2.7 // indirect
-	github.com/sagernet/sing-shadowsocks2 v0.2.0 // indirect
+	github.com/sagernet/sing-quic v0.5.0-beta.2 // indirect
+	github.com/sagernet/sing-shadowsocks v0.2.8 // indirect
+	github.com/sagernet/sing-shadowsocks2 v0.2.1 // indirect
 	github.com/sagernet/sing-shadowtls v0.2.1-0.20250503051639-fcd445d33c11 // indirect
-	github.com/sagernet/sing-tun v0.6.6-0.20250428031943-0686f8c4f210 // indirect
-	github.com/sagernet/sing-vmess v0.2.2-0.20250503051933-9b4cf17393f8 // indirect
+	github.com/sagernet/sing-tun v0.6.6-0.20250610083027-da0a50057fb5 // indirect
+	github.com/sagernet/sing-vmess v0.2.4-0.20250605032146-38cc72672c88 // indirect
 	github.com/sagernet/smux v1.5.34-mod.2 // indirect
 	github.com/sagernet/tailscale v1.80.3-mod.5 // indirect
-	github.com/sagernet/utls v1.6.7 // indirect
 	github.com/sagernet/wireguard-go v0.0.1-beta.7 // indirect
 	github.com/sagernet/ws v0.0.0-20231204124109-acfe8907c854 // indirect
 	github.com/sagikazarmark/locafero v0.4.0 // indirect
@@ -282,7 +281,6 @@ require (
 	github.com/vishvananda/netns v0.0.5 // indirect
 	github.com/volcengine/volc-sdk-golang v1.0.189 // indirect
 	github.com/vultr/govultr/v3 v3.9.1 // indirect
-	github.com/wyx2685/sing-vmess v0.0.0-20250524094403-696835735021 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xtls/reality v0.0.0-20250608132114-50752aec6bfb // indirect
 	github.com/yandex-cloud/go-genproto v0.0.0-20241220122821-aeb3b05efd1c // indirect
@@ -328,4 +326,4 @@ require (
 
 //replace github.com/sagernet/sing-box v1.12.0 => ./sing-box_mod
 
-replace github.com/sagernet/sing-box v1.12.0 => github.com/wyx2685/sing-box_mod v1.12.0-beta.17.2
+replace github.com/sagernet/sing-box v1.12.0 => github.com/dawenhaozx/sing-box v1.12.0-beta.23
