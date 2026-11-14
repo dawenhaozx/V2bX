@@ -105,19 +105,16 @@ func (n *NodeConfig) UnmarshalJSON(data []byte) (err error) {
 }
 
 type Options struct {
-	Name                   string          `json:"Name"`
-	Core                   string          `json:"Core"`
-	CoreName               string          `json:"CoreName"`
-	ListenIP               string          `json:"ListenIP"`
-	SendIP                 string          `json:"SendIP"`
-	DeviceOnlineMinTraffic int64           `json:"DeviceOnlineMinTraffic"`
-	ReportMinTraffic       int64           `json:"ReportMinTraffic"`
-	LimitConfig            LimitConfig     `json:"LimitConfig"`
-	RawOptions             json.RawMessage `json:"RawOptions"`
-	XrayOptions            *XrayOptions    `json:"XrayOptions"`
-	SingOptions            *SingOptions    `json:"SingOptions"`
-	Hysteria2ConfigPath    string          `json:"Hysteria2ConfigPath"`
-	CertConfig             *CertConfig     `json:"CertConfig"`
+	Name                   string       `json:"Name"`
+	Core                   string       `json:"Core"`
+	CoreName               string       `json:"CoreName"`
+	ListenIP               string       `json:"ListenIP"`
+	SendIP                 string       `json:"SendIP"`
+	DeviceOnlineMinTraffic int64        `json:"DeviceOnlineMinTraffic"`
+	ReportMinTraffic       int64        `json:"ReportMinTraffic"`
+	LimitConfig            LimitConfig  `json:"LimitConfig"`
+	SingOptions            *SingOptions `json:"SingOptions"`
+	CertConfig             *CertConfig  `json:"CertConfig"`
 }
 
 func (o *Options) UnmarshalJSON(data []byte) error {
@@ -126,19 +123,13 @@ func (o *Options) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	switch o.Core {
-	case "xray":
-		o.XrayOptions = NewXrayOptions()
-		return json.Unmarshal(data, o.XrayOptions)
-	case "sing":
-		o.SingOptions = NewSingOptions()
-		return json.Unmarshal(data, o.SingOptions)
-	case "hysteria2":
-		o.RawOptions = data
-		return nil
-	default:
-		o.Core = ""
-		o.RawOptions = data
+	o.Core = strings.ToLower(o.Core)
+	if o.Core == "" {
+		o.Core = "sing"
 	}
-	return nil
+	if o.Core != "sing" {
+		return fmt.Errorf("unsupported node core %q: only sing is available", o.Core)
+	}
+	o.SingOptions = NewSingOptions()
+	return json.Unmarshal(data, o.SingOptions)
 }

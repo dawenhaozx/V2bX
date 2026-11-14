@@ -3,7 +3,6 @@ package core
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/InazumaV/V2bX/api/panel"
@@ -18,7 +17,10 @@ type Selector struct {
 func NewSelector(c []conf.CoreConfig) (Core, error) {
 	cs := make(map[string]Core, len(c))
 	for _, t := range c {
-		f, ok := cores[strings.ToLower(t.Type)]
+		if err := normalizeCoreConfig(&t); err != nil {
+			return nil, err
+		}
+		f, ok := cores[t.Type]
 		if !ok {
 			return nil, errors.New("unknown core type: " + t.Type)
 		}
@@ -67,6 +69,15 @@ func isSupported(protocol string, protocols []string) bool {
 }
 
 func (s *Selector) AddNode(tag string, info *panel.NodeInfo, option *conf.Options) error {
+	if option.Core == "" {
+		option.Core = "sing"
+	}
+	if option.Core != "sing" {
+		return fmt.Errorf("unsupported node core %q: only sing is available", option.Core)
+	}
+	if option.SingOptions == nil {
+		option.SingOptions = conf.NewSingOptions()
+	}
 	var core Core
 	if len(option.CoreName) > 0 {
 		// use name to select core
@@ -74,13 +85,9 @@ func (s *Selector) AddNode(tag string, info *panel.NodeInfo, option *conf.Option
 			core = c
 		}
 	} else {
-		// use type to select core
+		// All instances use sing; choose one supporting the node protocol.
 		for _, c := range s.cores {
-			if len(option.Core) == 0 {
-				if !isSupported(info.Type, c.Protocols()) {
-					continue
-				}
-			} else if option.Core != c.Type() {
+			if !isSupported(info.Type, c.Protocols()) {
 				continue
 			}
 			core = c
@@ -88,14 +95,6 @@ func (s *Selector) AddNode(tag string, info *panel.NodeInfo, option *conf.Option
 	}
 	if core == nil {
 		return errors.New("the node type is not support")
-	}
-	if len(option.Core) == 0 {
-		option.Core = core.Type()
-		err := option.UnmarshalJSON(option.RawOptions)
-		if err != nil {
-			return fmt.Errorf("unmarshal option error: %s", err)
-		}
-		option.RawOptions = nil
 	}
 	err := core.AddNode(tag, info, option)
 	if err != nil {

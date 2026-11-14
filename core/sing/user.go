@@ -25,9 +25,6 @@ func (b *Sing) AddUsers(p *core.AddUsersParams) (added int, err error) {
 	}
 	b.users.mapLock.Lock()
 	defer b.users.mapLock.Unlock()
-	for i := range p.Users {
-		b.users.uidMap[p.Users[i].Uuid] = p.Users[i].Id
-	}
 	switch p.NodeInfo.Type {
 	case "vless":
 		us := make([]option.VLESSUser, len(p.Users))
@@ -118,6 +115,9 @@ func (b *Sing) AddUsers(p *core.AddUsersParams) (added int, err error) {
 	if err != nil {
 		return 0, err
 	}
+	for i := range p.Users {
+		b.users.uidMap[p.Users[i].Uuid] = p.Users[i].Id
+	}
 	return len(p.Users), err
 }
 
@@ -204,16 +204,17 @@ func (b *Sing) DelUsers(users []panel.UserInfo, tag string, info *panel.NodeInfo
 	b.users.mapLock.Lock()
 	defer b.users.mapLock.Unlock()
 	for i := range users {
+		uuids[i] = users[i].Uuid
+	}
+	if err := del.DelUsers(uuids); err != nil {
+		return err
+	}
+	for i := range users {
 		if v, ok := b.hookServer.counter.Load(tag); ok {
 			c := v.(*counter.TrafficCounter)
 			c.Delete(users[i].Uuid)
 		}
 		delete(b.users.uidMap, users[i].Uuid)
-		uuids[i] = users[i].Uuid
-	}
-	err := del.DelUsers(uuids)
-	if err != nil {
-		return err
 	}
 	return nil
 }

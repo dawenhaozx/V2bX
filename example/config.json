@@ -29,10 +29,9 @@
       "ListenIP": "0.0.0.0",
       "SendIP": "0.0.0.0",
       "DeviceOnlineMinTraffic": 200,
-      "MinReportTraffic": 0,
-      "TCPFastOpen": false,
-      "TCPMultiPath": true,
-      "SniffEnabled": true,
+      "ReportMinTraffic": 0,
+      "EnableTFO": false,
+      "TCPMultiPath": false,
       "CertConfig": {
         "CertMode": "self",
         "RejectUnknownSni": false,

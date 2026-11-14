@@ -1,0 +1,29 @@
+name: Test
+
+on:
+  push:
+    branches: [master, dev_new]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      GOEXPERIMENT: jsonv2
+      CGO_ENABLED: 0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Test backend
+        run: go test -tags "with_quic with_grpc with_utls with_wireguard with_acme with_gvisor" -timeout 180s ./...
+      - name: Build backend
+        run: go build -tags "with_quic with_grpc with_utls with_wireguard with_acme with_gvisor" .
+      - name: Test installer offline
+        if: runner.os == 'Linux'
+        run: bash scripts/install_test.sh

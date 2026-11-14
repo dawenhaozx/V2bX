@@ -14,6 +14,7 @@ import (
 	"github.com/InazumaV/V2bX/common/counter"
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/log"
+	"github.com/sagernet/sing-tun"
 	N "github.com/sagernet/sing/common/network"
 )
 
@@ -26,6 +27,25 @@ type HookServer struct {
 func (h *HookServer) ModeList() []string {
 	return nil
 }
+
+func (h *HookServer) RoutedFlow(_ context.Context, m adapter.InboundContext, _ adapter.Rule, _ adapter.Outbound) tun.FlowTracker {
+	if _, err := limiter.GetLimiter(m.Inbound); err != nil {
+		return nil
+	}
+	// Packet-forwarding flows cannot use the connection wrappers below. Reject
+	// this new path for managed inbounds instead of bypassing their limits and
+	// traffic accounting. The supported proxy protocols still use those wrappers.
+	log.Error("[", m.Inbound, "] raw forwarding flows are not supported for managed users")
+	return rejectedFlow{}
+}
+
+type rejectedFlow struct{}
+
+func (rejectedFlow) AttachFlow(handle tun.FlowHandle) { handle.CloseFlow() }
+func (rejectedFlow) CountForward(int)                 {}
+func (rejectedFlow) CountReverse(int)                 {}
+func (rejectedFlow) FlowEstablished()                 {}
+func (rejectedFlow) CloseFlow(tun.FlowCloseReason)    {}
 
 func (h *HookServer) RoutedConnection(_ context.Context, conn net.Conn, m adapter.InboundContext, _ adapter.Rule, _ adapter.Outbound) net.Conn {
 	l, err := limiter.GetLimiter(m.Inbound)
